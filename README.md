@@ -3,41 +3,7 @@
 A serverless image recognition and captioning system built with AWS CDK. This system can index faces, recognize people in photos, and generate AI-powered captions with relationship context using Amazon Neptune.
 
 ## Architecture
-
-```
-┌───────────┐     ┌───────────┐     ┌───────────────┐     ┌───────────┐
-│           │     │           │     │               │     │           │
-│  S3 Bucket├────►│  Lambda   ├────►│  Rekognition  │     │  DynamoDB │
-│           │     │ Functions │     │  Collection   │     │   Table   │
-│           │     │           │     │               │     │           │
-└─────┬─────┘     └─────┬─────┘     └───────────────┘     └─────┬─────┘
-      │                 │                                       │
-      │                 │                                       │
-      │                 ▼                                       │
-      │           ┌───────────┐                                 │
-      │           │           │                                 │
-      └──────────►│  Bedrock  │◄────────────────────────────────┘
-                  │           │                                 
-                  └─────┬─────┘                                 
-                        │                                       
-                        │                                       
-                        ▼                                       
-                  ┌───────────┐     ┌───────────┐     ┌───────────┐
-                  │           │     │           │     │           │
-                  │ API       │◄────┤  Web UI   │     │  Neptune  │
-                  │ Gateway   │     │           │     │ (Graph DB)│
-                  │           │     │           │     │           │
-                  └───────────┘     └───────────┘     └─────┬─────┘
-                                                            │
-                                                            │
-                                                            ▼
-                                                      ┌───────────┐
-                                                      │           │
-                                                      │Relationships│
-                                                      │  Handler  │
-                                                      │           │
-                                                      └───────────┘
-```
+![](Diagram_cap.png)
 
 ## Neptune Graph Database Structure
 
@@ -289,3 +255,5 @@ To avoid incurring charges, delete resources in this order:
 - Neptune enables scalable relationship queries and multi-hop traversals
 - System includes automatic retry logic for Bedrock throttling
 - Label detection provides object/scene context for enhanced search
+
+[def]: Diagram_cap.pngpng
