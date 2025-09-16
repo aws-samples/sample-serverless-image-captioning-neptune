@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Image Recognition Gallery</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .config,
+        .search-bar,
+        .faces,
+        .gallery {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .face-group {
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .face-group h4 {
+            margin-bottom: 10px;
+        }
+
+        .face-card {
+            text-align: center;
+            width: 120px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 10px;
+            background: #fff;
+            margin-right: 10px;
+        }
+        
+        .face-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        .face-card img {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 50%;
+        }
+
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .image-item {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+            background: #fff;
+            position: relative;
+        }
+        
+        .style-selector {
+            margin-top: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 5px;
+            line-height: 2;
+        }
+        
+        .style-btn {
+            font-size: 12px;
+            padding: 3px 8px;
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            cursor: pointer;
+            color: #007acc; /* Blue text for better visibility */
+            font-weight: 500; /* Slightly bolder */
+        }
+        
+        .style-btn:hover {
+            background: #e0e0e0;
+            border-color: #007acc;
+        }
+        
+        .style-btn.active {
+            background: #007acc;
+            color: white;
+            border-color: #005a99;
+        }
+
+        .image-item img {
+            width: 100%;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            object-fit: cover;
+        }
+
+        .caption {
+            font-size: 14px;
+            color: #333;
+        }
+
+        .people {
+            font-size: 13px;
+            color: #666;
+            font-weight: bold;
+        }
+        
+        .labels {
+            font-size: 12px;
+            color: #888;
+            margin-top: 5px;
+            font-style: italic;
+        }
+
+        .filename {
+            font-size: 12px;
+            color: #999;
+        }
+
+        input,
+        button {
+            padding: 8px;
+            margin: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        button {
+            background: #007acc;
+            color: white;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #005a99;
+        }
+
+        .face-flex {
+            display: flex;
+            flex-direction: row;
+            flex-wrap: nowrap;
+            gap: 15px;
+            overflow-x: auto;
+            padding: 10px 0;
+            width: 100%;
+        }
+        
+        .info-button, .delete-button {
+            cursor: pointer;
+            color: #007acc;
+            font-size: 12px;
+            margin-top: 5px;
+            margin-right: 10px;
+            line-height: 1;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        
+        .info-button:hover, .delete-button:hover {
+            text-decoration: underline;
+        }
+        
+        .delete-button {
+            color: #cc0000;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>🖼️ Image Recognition Gallery</h1>
+    </div>
+
+    <div class="config">
+        <h3>Configuration</h3>
+        <input type="text" id="apiEndpoint" placeholder="API Gateway Endpoint" style="width: 400px;">
+        <input type="text" id="bucketName" placeholder="S3 Bucket Name" style="width: 250px;">
+        <button onclick="saveConfig()">Save</button>
+    </div>
+
+    <div class="search-bar">
+        <input type="text" id="searchQuery" placeholder="🔍 Search faces or captions..." style="width: 300px;">
+        <button onclick="searchImages()">Search</button>
+        <button onclick="loadAllImages()">Show All</button>
+        <button onclick="loadIndexedFaces()">👥 Show Faces</button>
+    </div>
+
+    <div class="faces" id="faces-section" style="display:none;">
+        <h3>👥 Indexed Faces</h3>
+        <div id="faces-list"></div>
+    </div>
+
+    <div class="gallery">
+        <h3>📸 Image Gallery</h3>
+        <div class="image-grid" id="results"></div>
+    </div>
+
+    <script>
+        let config = { apiEndpoint: '', bucketName: '' };
+
+        function saveConfig() {
+            config.apiEndpoint = document.getElementById('apiEndpoint').value.trim();
+            config.bucketName = document.getElementById('bucketName').value.trim();
+            localStorage.setItem('imageAppConfig', JSON.stringify(config));
+            alert('✅ Saved');
+        }
+
+        function loadConfig() {
+            const saved = localStorage.getItem('imageAppConfig');
+            if (saved) {
+                config = JSON.parse(saved);
+                document.getElementById('apiEndpoint').value = config.apiEndpoint;
+                document.getElementById('bucketName').value = config.bucketName;
+            }
+        }
+
+        async function searchImages() {
+            const q = document.getElementById('searchQuery').value;
+            const url = q ? `${config.apiEndpoint}/search?q=${encodeURIComponent(q)}` : `${config.apiEndpoint}/search`;
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+                displayResults(data.results);
+            } catch (e) {
+                alert('❌ Search failed: ' + e.message);
+            }
+        }
+
+        async function loadAllImages() {
+            try {
+                const res = await fetch(`${config.apiEndpoint}/search`);
+                const data = await res.json();
+                displayResults(data.results);
+            } catch (e) {
+                alert('❌ Load failed: ' + e.message);
+            }
+        }
+
+        async function loadIndexedFaces() {
+            try {
+                const list = document.getElementById('faces-list');
+                const section = document.getElementById('faces-section');
+                section.style.display = 'block';
+                list.innerHTML = '';
+
+                const res = await fetch(`${config.apiEndpoint}/faces-list`);
+                const data = await res.json();
+
+                if (!data.faces || !Array.isArray(data.faces)) {
+                    throw new Error("Invalid faces response");
+                }
+
+                // Group by person_name
+                const group = {};
+                for (const face of data.faces) {
+                    const name = face.person_name || 'unknown';
+                    if (!group[name]) group[name] = [];
+                    group[name].push(...(face.images || []));
+                }
+
+                // Create a single horizontal row for all faces
+                const allFacesContainer = document.createElement('div');
+                allFacesContainer.className = 'face-flex';
+                
+                for (const name of Object.keys(group)) {
+                    for (const img of group[name]) {
+                        allFacesContainer.innerHTML += `
+                        <div class="face-card">
+                            <div class="face-name">${name}</div>
+                            <img src="${img.image_url}" alt="${name}" onerror="this.style.display='none'">
+                        </div>`;
+                    }
+                }
+                
+                list.appendChild(allFacesContainer);
+
+            } catch (e) {
+                console.error('Load faces error:', e);
+                alert('❌ Load faces failed: ' + e.message);
+            }
+        }
+
+        function displayResults(results) {
+            const container = document.getElementById('results');
+            container.innerHTML = '';
+            
+            // Debug logging
+            console.log('displayResults called with:', results);
+            
+            if (!results || results.length === 0) {
+                container.innerHTML = '<p style="color:#666;">No results found.</p>';
+                return;
+            }
+
+            for (const item of results) {
+                console.log('Processing item:', item);
+                
+                let facesHtml = 'No indexed faces';
+                if (item.recognized_faces && item.recognized_faces.length > 0) {
+                    // Filter out unknown faces
+                    const validFaces = item.recognized_faces.filter(name => name !== 'unknown');
+                    
+                    if (validFaces.length > 0) {
+                        facesHtml = validFaces.join(', ');
+                    }
+                }
+                
+
+
+                // Display labels with error handling
+                let labelsHtml = 'No labels detected';
+                try {
+                    if (item.labels && Array.isArray(item.labels) && item.labels.length > 0) {
+                        const topLabels = item.labels
+                            .filter(label => label && label.name && typeof label.confidence === 'number')
+                            .sort((a, b) => b.confidence - a.confidence)
+                            .slice(0, 5)
+                            .map(label => {
+                                const confidence = Math.round(label.confidence);
+                                return confidence === 100 ? label.name : `${label.name} (${confidence}%)`;
+                            })
+                            .join(', ');
+                        if (topLabels) {
+                            labelsHtml = topLabels;
+                        }
+                    }
+                } catch (e) {
+                    console.log('Labels processing error:', e);
+                    labelsHtml = 'Labels unavailable';
+                }
+
+                // Construct the full image ID as bucket/key format
+                const fullImageId = `${config.bucketName}/${item.image_id.startsWith('images/') ? item.image_id : 'images/' + item.image_id}`;
+                
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'image-item';
+                itemDiv.innerHTML = `
+                    <img src="${item.image_url}" alt="Image" onerror="this.style.display='none'">
+                    <div class="caption">${item.styled_caption || item.caption || ''}</div>
+                    <div class="people">👥 ${facesHtml}</div>
+                    <div class="labels">🏷️ ${labelsHtml}</div>
+                    <div style="display: flex;">
+                        <div class="info-button" onclick="toggleInfo(this)">ℹ️ Info</div>
+                        <div class="delete-button" onclick="deleteImage(this)">Remove</div>
+                    </div>
+                    <div class="filename" style="display:none;">📁 ${item.image_id}</div>
+                    <div class="style-selector">
+                        <span style="margin-right: 3px;">Style:</span>
+                        <button class="style-btn ${item.caption_style === 'objective' ? 'active' : ''}" data-style="objective" data-image-id="${fullImageId}">Objective</button>
+                        <button class="style-btn ${item.caption_style === 'warm' ? 'active' : ''}" data-style="warm" data-image-id="${fullImageId}">Warm</button>
+                        <button class="style-btn ${item.caption_style === 'funny' ? 'active' : ''}" data-style="funny" data-image-id="${fullImageId}">Funny</button>
+                        <button class="style-btn ${item.caption_style === 'poetic' ? 'active' : ''}" data-style="poetic" data-image-id="${fullImageId}">Poetic</button>
+                        <button class="style-btn ${item.caption_style === 'dramatic' ? 'active' : ''}" data-style="dramatic" data-image-id="${fullImageId}">Dramatic</button>
+                    </div>
+                `;
+                
+                // Add event listeners to style buttons
+                itemDiv.querySelectorAll('.style-btn').forEach(btn => {
+                    btn.addEventListener('click', async function() {
+                        const style = this.getAttribute('data-style');
+                        const imageId = this.getAttribute('data-image-id');
+                        await changeStyle(imageId, style, itemDiv);
+                    });
+                });
+                
+                container.appendChild(itemDiv);
+            }
+        }
+
+        loadConfig();
+        setTimeout(() => {
+            if (config.apiEndpoint) {
+                loadAllImages();
+                loadIndexedFaces();
+            }
+        }, 500);
+
+        document.getElementById('searchQuery').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') searchImages();
+        });
+        
+        // Function to toggle info visibility
+        function toggleInfo(button) {
+            const parent = button.parentElement;
+            const filename = parent.nextElementSibling;
+            if (filename.style.display === 'none') {
+                filename.style.display = 'block';
+                button.textContent = '❌ Hide Info';
+            } else {
+                filename.style.display = 'none';
+                button.textContent = 'ℹ️ Info';
+            }
+        }
+        
+        // Function to delete image from UI
+        function deleteImage(button) {
+            if (confirm('Remove this image from the display?')) {
+                const imageItem = button.closest('.image-item');
+                imageItem.style.opacity = '0.5';
+                setTimeout(() => {
+                    imageItem.remove();
+                }, 300);
+            }
+        }
+        
+        // Function to change caption style
+        async function changeStyle(imageId, style, itemDiv) {
+            try {
+                // Update UI to show loading state
+                const captionDiv = itemDiv.querySelector('.caption');
+                const originalCaption = captionDiv.innerHTML;
+                captionDiv.innerHTML = 'Generating styled caption...';
+                
+                // Update button states
+                itemDiv.querySelectorAll('.style-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                    if (btn.getAttribute('data-style') === style) {
+                        btn.classList.add('active');
+                    }
+                });
+                
+                console.log(`Calling API: ${config.apiEndpoint}/style-caption with image_id: ${imageId}, style: ${style}`);
+                
+                // Call API to generate styled caption
+                const res = await fetch(`${config.apiEndpoint}/style-caption`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image_id: imageId, style: style })
+                });
+                
+                console.log('API response status:', res.status);
+                const data = await res.json();
+                console.log('API response data:', data);
+                
+                if (data.caption) {
+                    captionDiv.innerHTML = `${data.caption}`;
+                } else if (data.error) {
+                    console.error('API error:', data.error);
+                    captionDiv.innerHTML = originalCaption;
+                    alert(`Error: ${data.error}`);
+                } else {
+                    captionDiv.innerHTML = originalCaption;
+                    alert('Failed to generate styled caption - no caption returned');
+                }
+            } catch (e) {
+                console.error('Style change error:', e);
+                alert('Error changing caption style: ' + e.message);
+            }
+        }
+    </script>
+</body>
+
+</html>
