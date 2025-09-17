@@ -207,6 +207,20 @@ class ImageNameCapStackNeptune(Stack):
                 "NEPTUNE_ENDPOINT": neptune_cluster.attr_endpoint,
             }
         )
+        
+        # Label Relationships Handler Lambda
+        label_relationships_handler = _lambda.Function(self, "LabelRelationshipsHandler",
+            runtime=_lambda.Runtime.PYTHON_3_11,
+            handler="label_relationships.handler",
+            code=_lambda.Code.from_asset("lambda"),
+            role=lambda_role,
+            timeout=Duration.seconds(60),
+            vpc=vpc,
+            layers=[neptune_layer],
+            environment={
+                "NEPTUNE_ENDPOINT": neptune_cluster.attr_endpoint,
+            }
+        )
 
         # API Gateway
         api = apigateway.RestApi(self, "Api",
@@ -237,6 +251,9 @@ class ImageNameCapStackNeptune(Stack):
         relationships = api.root.add_resource("relationships")
         relationships.add_method("GET", apigateway.LambdaIntegration(relationships_handler))
         relationships.add_method("POST", apigateway.LambdaIntegration(relationships_handler))
+        
+        label_relationships = api.root.add_resource("label-relationships")
+        label_relationships.add_method("GET", apigateway.LambdaIntegration(label_relationships_handler))
         
 
 

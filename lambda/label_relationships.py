@@ -30,18 +30,29 @@ def handler(event, context):
         results = []
         
         if query_type == 'person_labels':
-            # Find labels that a person appears with
-            labels = g.V().has('name', name.lower()).outE('appears_with').inV().valueMap().toList()
-            for label in labels:
-                results.append({
-                    'name': label.get('name', [''])[0],
-                    'type': label.get('type', [''])[0],
-                    'categories': label.get('categories', [''])[0].split(',') if label.get('categories', ['']) else []
-                })
+            # Find labels that a person appears with (deduplicated, filtered for relevance)
+            all_labels = g.V().has('name', name.lower()).outE('appears_with').inV().dedup().valueMap().toList()
+            
+            # Filter out generic labels and prioritize meaningful ones
+            generic_labels = {'person', 'people', 'face', 'head', 'adult', 'male', 'female', 'man', 'woman'}
+            filtered_labels = []
+            
+            for label in all_labels:
+                label_name = label.get('name', [''])[0]
+                if label_name not in generic_labels:
+                    filtered_labels.append({
+                        'name': label_name,
+                        'type': label.get('type', [''])[0],
+                        'categories': label.get('categories', [''])[0].split(',') if label.get('categories', ['']) else []
+                    })
+            
+            # Return top 5 meaningful labels
+            results = filtered_labels[:5]
                 
         elif query_type == 'label_people':
-            # Find people who appear with a specific label
-            people = g.V().has('name', name.lower()).inE('appears_with').outV().valueMap().toList()
+            # Find people who appear with a specific label (deduplicated, top 5)
+            people = g.V().has('name', name.lower()).inE('appears_with').outV().dedup().limit(5).valueMap().toList()
+            
             for person in people:
                 results.append({
                     'name': person.get('name', [''])[0],
@@ -78,14 +89,11 @@ def handler(event, context):
                 })
                 
         elif query_type == 'label_cooccurrence':
-            # Find labels that commonly appear with this label
-            cooccurring = g.V().has('name', name.lower()).outE('co_occurs_with').order().by('count', 'desc').limit(10).as_('e').inV().as_('v').select('e', 'v').toList()
-            for item in cooccurring:
-                edge = item['e']
-                vertex = item['v']
+            # Find labels that commonly appear with this label (top 5)
+            cooccurring = g.V().has('name', name.lower()).outE('co_occurs_with').limit(5).inV().valueMap().toList()
+            for vertex in cooccurring:
                 results.append({
-                    'name': vertex['name'],
-                    'count': edge['count'],
+                    'name': vertex.get('name', [''])[0],
                     'type': 'co_occurrence'
                 })
                 

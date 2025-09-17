@@ -86,13 +86,16 @@ def handler(event, context):
                 for person in neptune_people:
                     filter_expressions.append(Attr('searchable_text').contains(person.lower()))
                 
+                # Add filter to ensure images have recognized faces
+                has_faces_filter = Attr('faces').exists() & Attr('faces').size().gt(0)
+                
                 if len(filter_expressions) == 1:
-                    scan_kwargs['FilterExpression'] = filter_expressions[0]
+                    scan_kwargs['FilterExpression'] = filter_expressions[0] & has_faces_filter
                 else:
                     combined_filter = filter_expressions[0]
                     for expr in filter_expressions[1:]:
                         combined_filter = combined_filter | expr  # OR logic for family
-                    scan_kwargs['FilterExpression'] = combined_filter
+                    scan_kwargs['FilterExpression'] = combined_filter & has_faces_filter
                     
                 print(f"Family search for any of: {neptune_people}")
             else:
@@ -101,14 +104,17 @@ def handler(event, context):
                 for person in neptune_people:
                     filter_expressions.append(Attr('searchable_text').contains(person.lower()))
                 
+                # Add filter to ensure images have recognized faces
+                has_faces_filter = Attr('faces').exists() & Attr('faces').size().gt(0)
+                
                 # Combine with AND logic - image must contain all people
                 if len(filter_expressions) == 1:
-                    scan_kwargs['FilterExpression'] = filter_expressions[0]
+                    scan_kwargs['FilterExpression'] = filter_expressions[0] & has_faces_filter
                 else:
                     combined_filter = filter_expressions[0]
                     for expr in filter_expressions[1:]:
                         combined_filter = combined_filter & expr
-                    scan_kwargs['FilterExpression'] = combined_filter
+                    scan_kwargs['FilterExpression'] = combined_filter & has_faces_filter
                     
                 print(f"Neptune search for people: {neptune_people}")
             
@@ -171,10 +177,16 @@ def handler(event, context):
             if 'faces' in item and isinstance(item['faces'], list):
                 for face_item in item['faces']:
                     if isinstance(face_item, dict) and 'name' in face_item:
-                        recognized_faces.append(face_item['name'])
-                        if 'confidence' in face_item:
-                            face_confidences.append(face_item['confidence'])
+                        # Only include faces that are not 'unknown'
+                        if face_item['name'] != 'unknown':
+                            recognized_faces.append(face_item['name'])
+                            if 'confidence' in face_item:
+                                face_confidences.append(face_item['confidence'])
             
+            # For relationship searches, only include images with actual recognized faces
+            if neptune_people and not recognized_faces:
+                continue  # Skip images with no recognized faces for relationship searches
+                
             items.append({
                 'image_id': image_key,
                 'caption': item.get('caption', 'No caption'),

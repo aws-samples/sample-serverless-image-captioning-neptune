@@ -65,6 +65,9 @@ def handler(event, context):
         res = bedrock.invoke_model(modelId=MODEL_ID, body=json.dumps(body))
         styled_caption = json.loads(res["body"].read())["content"][0]["text"]
         
+        # Remove quotes from the response
+        styled_caption = styled_caption.strip('"').strip("'")
+        
         # Ensure names are mentioned
         if face_names:
             # Check if all names are in the caption
@@ -110,15 +113,15 @@ def get_style_prompt(style, original_caption, face_names):
         name_instruction = f" You MUST mention these specific people by name: {names_str}."
 
     style_prompts = {
-        "objective": f"Rewrite the following caption in a simple, factual style in 20-30 words. Focus on location, clothing, and activities.{name_instruction} Write in third person perspective.\n\nOriginal caption: \"{original_caption}\"",
+        "objective": f"Rewrite the following caption in a simple, factual style in 20-30 words. Focus on location, clothing, and activities.{name_instruction} Write in third person perspective. Do not include quotes in your response.\n\nOriginal caption: {original_caption}",
         
-        "warm": f"Rewrite the following caption in a warm, friendly style in 20-30 words. Focus on the positive emotions and connections between people.{name_instruction} Write in third person perspective.\n\nOriginal caption: \"{original_caption}\"",
+        "warm": f"Rewrite the following caption in a warm, friendly style in 20-30 words. Focus on the positive emotions and connections between people.{name_instruction} Write in third person perspective. Do not include quotes in your response.\n\nOriginal caption: {original_caption}",
         
-        "funny": f"Rewrite the following caption in a humorous style in 20-30 words. Be light-hearted and playful, but not mean.{name_instruction} Write in third person perspective.\n\nOriginal caption: \"{original_caption}\"",
+        "funny": f"Rewrite the following caption in a humorous style in 20-30 words. Be light-hearted and playful, but not mean.{name_instruction} Write in third person perspective. Do not include quotes in your response.\n\nOriginal caption: {original_caption}",
         
-        "poetic": f"Rewrite the following caption in a poetic style in 20-30 words. Use vivid imagery and metaphors.{name_instruction} Write in third person perspective.\n\nOriginal caption: \"{original_caption}\"",
+        "poetic": f"Rewrite the following caption in a poetic style in 20-30 words. Use vivid imagery and metaphors.{name_instruction} Write in third person perspective. Do not include quotes in your response.\n\nOriginal caption: {original_caption}",
         
-        "dramatic": f"Rewrite the following caption in a dramatic style in 20-30 words, as if it's a scene from a movie.{name_instruction} Write in third person perspective.\n\nOriginal caption: \"{original_caption}\""
+        "dramatic": f"Rewrite the following caption in a dramatic style in 20-30 words, as if it's a scene from a movie.{name_instruction} Write in third person perspective. Do not include quotes in your response.\n\nOriginal caption: {original_caption}"
     }
     
     return style_prompts.get(style.lower(), style_prompts["objective"])

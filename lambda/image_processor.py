@@ -282,19 +282,39 @@ def personalize_description(generic_caption, faces):
     if not faces:
         return generic_caption
 
-    # Get names of recognized faces
+    # Get names of recognized faces and count total faces
     face_names = [f["name"] for f in faces if f["name"] != "unknown"]
+    total_faces = len(faces)
+    recognized_faces = len(face_names)
+    unknown_faces = total_faces - recognized_faces
+    
     if not face_names:
         return generic_caption
 
     # Add relationship context
     relationship_context = get_relationship_context(face_names)
     
-    # Construct simple prompt
+    # Create more accurate prompt based on face counts
+    if recognized_faces == 1 and total_faces == 1:
+        # Single person, fully recognized
+        name_instruction = f"Replace 'person' or 'people' with {face_names[0]}."
+    elif recognized_faces == 1 and unknown_faces > 0:
+        # One recognized person plus unknown people
+        name_instruction = f"Replace references to people with '{face_names[0]} and others' or '{face_names[0]} with friends'."
+    elif recognized_faces > 1 and unknown_faces == 0:
+        # Multiple recognized people, no unknowns
+        name_instruction = f"Replace 'people' with the names: {', '.join(face_names)}."
+    else:
+        # Multiple recognized people plus unknowns
+        name_instruction = f"Replace references to people with '{', '.join(face_names)} and others'."
+    
     prompt = (
-        f"Replace 'people' or 'person' in this description with: {', '.join(face_names)}. "
-        f"Keep everything else the same. Do not add explanations or refusals. "
-        f"Just rewrite the sentence using their names instead of generic terms."
+        f"{name_instruction} "
+        f"Be careful not to duplicate names or assign the same name to multiple people. "
+        f"DO NOT assign specific actions to specific people unless the original description is certain. "
+        f"Keep actions general (e.g., 'someone holds flowers' rather than 'Kara holds flowers'). "
+        f"If the description mentions specific counts (like 'two people'), adjust appropriately. "
+        f"Keep all other details the same. Do not add explanations or refusals."
         f"{relationship_context}\n\n"
         f'Description: "{generic_caption}"'
     )
@@ -303,7 +323,7 @@ def personalize_description(generic_caption, faces):
         body = {
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 250,
-            "temperature": 0.4,
+            "temperature": 0.3,  # Lower temperature for more consistent results
             "messages": [
                 {
                     "role": "user",
@@ -318,7 +338,7 @@ def personalize_description(generic_caption, faces):
             try:
                 response = bedrock.invoke_model(modelId=MODEL_ID, body=json.dumps(body))
                 result = json.loads(response["body"].read())
-                return result["content"][0]["text"]
+                return result["content"][0]["text"].strip('"').strip("'")
             except ClientError as e:
                 if e.response['Error']['Code'] == 'ThrottlingException' and attempt < max_retries - 1:
                     wait_time = min(60, (3 ** attempt) + random.uniform(0, 5))
@@ -355,6 +375,8 @@ def generate_caption(bucket, key, faces):
             "DO NOT include age descriptions. "
             "DO NOT use phrases like 'I apologize' or 'I notice'. "
             "Always write in third person perspective. "
+            "DO NOT assign specific actions to specific people unless absolutely certain. "
+            "Use general terms like 'people are' or 'someone is' instead of assuming who does what. "
             "If there are only the recognized people and no others, just describe them directly without saying 'with others'. "
             "If there are unknown people beyond the recognized ones, say 'with others' or 'with friends', NOT 'family members'. "
             "Describe the event or activity they're doing."
@@ -387,7 +409,7 @@ def generate_caption(bucket, key, faces):
         for attempt in range(max_retries):
             try:
                 res = bedrock.invoke_model(modelId=MODEL_ID, body=json.dumps(body))
-                generic = json.loads(res["body"].read())["content"][0]["text"]
+                generic = json.loads(res["body"].read())["content"][0]["text"].strip('"').strip("'")
                 print(f"Generic caption: {generic}")
                 break
             except ClientError as e:

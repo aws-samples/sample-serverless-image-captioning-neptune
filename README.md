@@ -3,63 +3,17 @@
 A serverless image recognition and captioning system built with AWS CDK. This system can index faces, recognize people in photos, and generate AI-powered captions with relationship context using Amazon Neptune.
 
 ## Architecture
-
-```
-┌───────────┐     ┌───────────┐     ┌───────────────┐     ┌───────────┐
-│           │     │           │     │               │     │           │
-│  S3 Bucket├────►│  Lambda   ├────►│  Rekognition  │     │  DynamoDB │
-│           │     │ Functions │     │  Collection   │     │   Table   │
-│           │     │           │     │               │     │           │
-└─────┬─────┘     └─────┬─────┘     └───────────────┘     └─────┬─────┘
-      │                 │                                       │
-      │                 │                                       │
-      │                 ▼                                       │
-      │           ┌───────────┐                                 │
-      │           │           │                                 │
-      └──────────►│  Bedrock  │◄────────────────────────────────┘
-                  │           │                                 
-                  └─────┬─────┘                                 
-                        │                                       
-                        │                                       
-                        ▼                                       
-                  ┌───────────┐     ┌───────────┐     ┌───────────┐
-                  │           │     │           │     │           │
-                  │ API       │◄────┤  Web UI   │     │  Neptune  │
-                  │ Gateway   │     │           │     │ (Graph DB)│
-                  │           │     │           │     │           │
-                  └───────────┘     └───────────┘     └─────┬─────┘
-                                                            │
-                                                            │
-                                                            ▼
-                                                      ┌───────────┐
-                                                      │           │
-                                                      │Relationships│
-                                                      │  Handler  │
-                                                      │           │
-                                                      └───────────┘
-```
+![](Diagram_cap.png)
 
 ## Neptune Graph Database Structure
 
 The system uses Neptune to store relationships and hierarchies as a graph:
 
-### People and Family Relationships
-```
-                    ┌─────────────────┐
-                    │     Parent      │
-                    │ gender: woman   │
-                    │ role: mother    │
-                    └─────┬─────┬─────┘
-                          │     │
-                    mother_of   mother_of
-                          │     │
-                          ▼     ▼
-    ┌─────────────────┐         ┌─────────────────┐
-    │     Child1      │◄────────┤     Child2      │
-    │ gender: girl    │sibling_of│ gender: boy     │
-    │ role: daughter  │─────────►│ role: son       │
-    └─────────────────┘         └─────────────────┘
-```
+### Sample Family Relationship Graph (Demo)
+![](people_demo.png)
+
+### Example Label Hierarchy and Co-occurrence Network
+![](label_demo.png)
 
 ### How Neptune Powers Relationship Search
 
@@ -74,6 +28,9 @@ The system uses Neptune to store relationships and hierarchies as a graph:
 - **Multi-step**: "person's brother's mom", "person's children's friends"
 - **Dynamic Groups**: "person's family", "siblings together"
 - **Role-based**: "mothers with cars", "children outdoor"
+- **Labels**: "outdoor", "birthday", "person car", "family food"
+- **Label hierarchies**: "vehicle" finds all car/truck photos
+- **Co-occurrence**: "celebration" finds birthday/party contexts
 
 ## Components
 
@@ -85,12 +42,12 @@ The system uses Neptune to store relationships and hierarchies as a graph:
 
 - **Lambda Functions**:
   - `face_indexer.py`: Indexes reference faces with names
-  - `image_processor.py`: Processes images for recognition, labeling, and captioning
-  - `search_handler.py`: Handles search queries with Neptune relationship support
+  - `image_processor.py`: Processes images for recognition, labeling, and captioning (conservative captions)
+  - `search_handler.py`: Handles search queries with Neptune relationship support (filters no-face images)
   - `faces_handler.py`: Lists indexed faces
   - `style_caption.py`: Generates styled captions
   - `relationships_handler_neptune.py`: Manages relationships in Neptune
-  - `label_relationships.py`: Queries label relationships and hierarchies
+  - `label_relationships.py`: Queries label relationships (top 5 meaningful labels)
 
 - **DynamoDB Table**: Stores image metadata, recognized faces, labels, and captions
 
@@ -213,6 +170,12 @@ aws s3 cp family_photo.jpg s3://YOUR_BUCKET/images/family_photo.jpg
 - `GET /relationships`: Get relationships
 - `POST /relationships`: Add relationships
 - `GET /label-relationships`: Query label relationships
+  - `?type=person_labels&name=person` - Top 5 meaningful labels a person appears with
+  - `?type=label_people&name=car` - People who appear with a label
+  - `?type=common_labels&name=person1&person2=person2` - Common labels
+  - `?type=label_hierarchy&name=car` - Category hierarchy for label
+  - `?type=label_cooccurrence&name=outdoor` - Labels that co-occur
+  - `?type=category_labels&name=vehicle` - All labels in category
 
 ## Caption Styles
 
@@ -242,6 +205,29 @@ Neptune enables complex queries impossible with traditional databases:
 - "grandparents with grandchildren" - multi-generational traversals
 
 These queries require **graph traversal algorithms** that Neptune provides natively.
+
+## Label Detection and Search
+
+The system uses Amazon Rekognition to detect objects, scenes, and activities in photos:
+
+### Detected Labels Include:
+- **Objects**: Car, Food, Table, Phone, Book, etc.
+- **Scenes**: Outdoor, Indoor, Restaurant, Beach, etc.
+- **Activities**: Birthday, Wedding, Sports, etc.
+- **Attributes**: Smile, Clothing, etc.
+
+### Label-based Search:
+- **Single labels**: "car", "outdoor", "food"
+- **Combined searches**: "person car", "family outdoor"
+- **Activity searches**: "birthday", "celebration"
+
+### Neptune Label Relationships:
+- Creates connections between people and objects they appear with
+- Builds label hierarchies (car → vehicle → transportation)
+- Tracks label co-occurrence patterns (outdoor + car = road trip context)
+- **Returns top 5 meaningful labels** per person (excludes generic terms like "person", "face", "adult")
+- Enables queries like "what objects does person appear with?"
+- Powers contextual search and semantic discovery
 
 ## Security and Privacy
 
@@ -285,7 +271,9 @@ To avoid incurring charges, delete resources in this order:
 
 - Face recognition works best with clear, front-facing photos
 - The system automatically resizes large images for processing
-- Captions include recognized people's names with relationship context
+- **Captions use conservative language** to avoid incorrectly attributing actions to specific people
+- **Label queries return top 5 meaningful results** with generic labels filtered out
+- **Relationship searches only show images with recognized faces** (no face detection failures)
 - Neptune enables scalable relationship queries and multi-hop traversals
 - System includes automatic retry logic for Bedrock throttling
-- Label detection provides object/scene context for enhanced search
+- Label detection provides object/scene context with 70%+ confidence threshold
