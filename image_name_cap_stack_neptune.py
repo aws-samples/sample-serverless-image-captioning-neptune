@@ -1,5 +1,6 @@
 from aws_cdk import Duration, RemovalPolicy, Stack
 from aws_cdk import aws_apigateway as apigateway
+from aws_cdk import aws_cognito as cognito
 from aws_cdk import aws_dynamodb as dynamodb
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_iam as iam
@@ -222,7 +223,30 @@ class ImageNameCapStackNeptune(Stack):
             }
         )
 
-        # API Gateway
+        # Cognito User Pool
+        user_pool = cognito.UserPool(self, "UserPool",
+            user_pool_name="ImageRecognitionUsers",
+            sign_in_aliases=cognito.SignInAliases(email=True),
+            auto_verify=cognito.AutoVerifiedAttrs(email=True),
+            password_policy=cognito.PasswordPolicy(
+                min_length=8,
+                require_lowercase=True,
+                require_uppercase=True,
+                require_digits=True
+            )
+        )
+        
+        # User Pool Client
+        user_pool_client = user_pool.add_client("UserPoolClient",
+            user_pool_client_name="ImageRecognitionClient",
+            generate_secret=False,
+            auth_flows=cognito.AuthFlow(
+                user_password=True,
+                user_srp=True
+            )
+        )
+        
+        # API Gateway with Cognito authentication
         api = apigateway.RestApi(self, "Api",
             rest_api_name="Image Recognition API",
             default_cors_preflight_options=apigateway.CorsOptions(
@@ -231,29 +255,34 @@ class ImageNameCapStackNeptune(Stack):
                 allow_headers=["*"]
             )
         )
+        
+        # Cognito Authorizer
+        authorizer = apigateway.CognitoUserPoolsAuthorizer(self, "Authorizer",
+            cognito_user_pools=[user_pool]
+        )
 
-        # API Routes
+        # API Routes with Cognito authentication
         faces = api.root.add_resource("faces")
-        faces.add_method("POST", apigateway.LambdaIntegration(face_indexer))
+        faces.add_method("POST", apigateway.LambdaIntegration(face_indexer), authorizer=authorizer)
 
         images = api.root.add_resource("images")
-        images.add_method("POST", apigateway.LambdaIntegration(image_processor))
+        images.add_method("POST", apigateway.LambdaIntegration(image_processor), authorizer=authorizer)
 
         search = api.root.add_resource("search")
-        search.add_method("GET", apigateway.LambdaIntegration(search_handler))
+        search.add_method("GET", apigateway.LambdaIntegration(search_handler), authorizer=authorizer)
 
         faces_list = api.root.add_resource("faces-list")
-        faces_list.add_method("GET", apigateway.LambdaIntegration(faces_handler))
+        faces_list.add_method("GET", apigateway.LambdaIntegration(faces_handler), authorizer=authorizer)
         
         style = api.root.add_resource("style-caption")
-        style.add_method("POST", apigateway.LambdaIntegration(style_caption))
+        style.add_method("POST", apigateway.LambdaIntegration(style_caption), authorizer=authorizer)
         
         relationships = api.root.add_resource("relationships")
-        relationships.add_method("GET", apigateway.LambdaIntegration(relationships_handler))
-        relationships.add_method("POST", apigateway.LambdaIntegration(relationships_handler))
+        relationships.add_method("GET", apigateway.LambdaIntegration(relationships_handler), authorizer=authorizer)
+        relationships.add_method("POST", apigateway.LambdaIntegration(relationships_handler), authorizer=authorizer)
         
         label_relationships = api.root.add_resource("label-relationships")
-        label_relationships.add_method("GET", apigateway.LambdaIntegration(label_relationships_handler))
+        label_relationships.add_method("GET", apigateway.LambdaIntegration(label_relationships_handler), authorizer=authorizer)
         
 
 
@@ -290,3 +319,5 @@ class ImageNameCapStackNeptune(Stack):
         CfnOutput(self, "BucketOut", value=bucket.bucket_name)
         CfnOutput(self, "ApiEndpoint", value=api.url)
         CfnOutput(self, "NeptuneEndpoint", value=neptune_cluster.attr_endpoint)
+        CfnOutput(self, "UserPoolId", value=user_pool.user_pool_id)
+        CfnOutput(self, "UserPoolClientId", value=user_pool_client.user_pool_client_id)

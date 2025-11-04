@@ -190,9 +190,25 @@
 
     <div class="config">
         <h3>Configuration</h3>
-        <input type="text" id="apiEndpoint" placeholder="API Gateway Endpoint" style="width: 400px;">
-        <input type="text" id="bucketName" placeholder="S3 Bucket Name" style="width: 250px;">
+        <input type="text" id="apiEndpoint" placeholder="API Gateway Endpoint" style="width: 300px;">
+        <input type="text" id="bucketName" placeholder="S3 Bucket Name" style="width: 200px;">
+        <input type="text" id="userPoolId" placeholder="User Pool ID" style="width: 200px;">
+        <input type="text" id="clientId" placeholder="Client ID" style="width: 200px;">
         <button onclick="saveConfig()">Save</button>
+    </div>
+    
+    <div class="config" id="auth-section">
+        <h3>Authentication</h3>
+        <div id="login-form">
+            <input type="email" id="email" placeholder="Email" style="width: 200px;">
+            <input type="password" id="password" placeholder="Password" style="width: 200px;">
+            <button onclick="signIn()">Sign In</button>
+            <button onclick="signUp()">Sign Up</button>
+        </div>
+        <div id="user-info" style="display:none;">
+            <span id="user-email"></span>
+            <button onclick="signOut()">Sign Out</button>
+        </div>
     </div>
 
     <div class="search-bar">
@@ -213,11 +229,14 @@
     </div>
 
     <script>
-        let config = { apiEndpoint: '', bucketName: '' };
+        let config = { apiEndpoint: '', bucketName: '', userPoolId: '', clientId: '' };
+        let authToken = null;
 
         function saveConfig() {
             config.apiEndpoint = document.getElementById('apiEndpoint').value.trim();
             config.bucketName = document.getElementById('bucketName').value.trim();
+            config.userPoolId = document.getElementById('userPoolId').value.trim();
+            config.clientId = document.getElementById('clientId').value.trim();
             localStorage.setItem('imageAppConfig', JSON.stringify(config));
             alert('✅ Saved');
         }
@@ -228,14 +247,30 @@
                 config = JSON.parse(saved);
                 document.getElementById('apiEndpoint').value = config.apiEndpoint;
                 document.getElementById('bucketName').value = config.bucketName;
+                document.getElementById('userPoolId').value = config.userPoolId;
+                document.getElementById('clientId').value = config.clientId;
+            }
+            
+            // Check for saved auth token
+            const savedToken = localStorage.getItem('authToken');
+            const savedEmail = localStorage.getItem('userEmail');
+            if (savedToken && savedEmail) {
+                authToken = savedToken;
+                showUserInfo(savedEmail);
             }
         }
 
         async function searchImages() {
+            if (!authToken) {
+                alert('Please sign in first');
+                return;
+            }
             const q = document.getElementById('searchQuery').value;
             const url = q ? `${config.apiEndpoint}/search?q=${encodeURIComponent(q)}` : `${config.apiEndpoint}/search`;
             try {
-                const res = await fetch(url);
+                const res = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
                 const data = await res.json();
                 displayResults(data.results);
             } catch (e) {
@@ -244,8 +279,14 @@
         }
 
         async function loadAllImages() {
+            if (!authToken) {
+                alert('Please sign in first');
+                return;
+            }
             try {
-                const res = await fetch(`${config.apiEndpoint}/search`);
+                const res = await fetch(`${config.apiEndpoint}/search`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
                 const data = await res.json();
                 displayResults(data.results);
             } catch (e) {
@@ -260,7 +301,9 @@
                 section.style.display = 'block';
                 list.innerHTML = '';
 
-                const res = await fetch(`${config.apiEndpoint}/faces-list`);
+                const res = await fetch(`${config.apiEndpoint}/faces-list`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
                 const data = await res.json();
 
                 if (!data.faces || !Array.isArray(data.faces)) {
@@ -384,9 +427,108 @@
             }
         }
 
+        // Cognito Authentication Functions
+        async function signUp() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            if (!email || !password) {
+                alert('Please enter email and password');
+                return;
+            }
+            
+            try {
+                const response = await fetch('https://cognito-idp.us-east-1.amazonaws.com/', {
+                    method: 'POST',
+                    headers: {
+                        'X-Amz-Target': 'AWSCognitoIdentityProviderService.SignUp',
+                        'Content-Type': 'application/x-amz-json-1.1'
+                    },
+                    body: JSON.stringify({
+                        ClientId: config.clientId,
+                        Username: email,
+                        Password: password,
+                        UserAttributes: [{
+                            Name: 'email',
+                            Value: email
+                        }]
+                    })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    alert('Sign up successful! Please check your email for verification.');
+                } else {
+                    alert('Sign up failed: ' + (data.message || data.__type));
+                }
+            } catch (e) {
+                alert('Sign up error: ' + e.message);
+            }
+        }
+        
+        async function signIn() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            if (!email || !password) {
+                alert('Please enter email and password');
+                return;
+            }
+            
+            try {
+                const response = await fetch('https://cognito-idp.us-east-1.amazonaws.com/', {
+                    method: 'POST',
+                    headers: {
+                        'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth',
+                        'Content-Type': 'application/x-amz-json-1.1'
+                    },
+                    body: JSON.stringify({
+                        ClientId: config.clientId,
+                        AuthFlow: 'USER_PASSWORD_AUTH',
+                        AuthParameters: {
+                            USERNAME: email,
+                            PASSWORD: password
+                        }
+                    })
+                });
+                
+                const data = await response.json();
+                if (response.ok && data.AuthenticationResult) {
+                    authToken = data.AuthenticationResult.IdToken;
+                    localStorage.setItem('authToken', authToken);
+                    localStorage.setItem('userEmail', email);
+                    showUserInfo(email);
+                    alert('Sign in successful!');
+                } else {
+                    alert('Sign in failed: ' + (data.message || data.__type));
+                }
+            } catch (e) {
+                alert('Sign in error: ' + e.message);
+            }
+        }
+        
+        function signOut() {
+            authToken = null;
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('userEmail');
+            showLoginForm();
+            alert('Signed out successfully');
+        }
+        
+        function showUserInfo(email) {
+            document.getElementById('login-form').style.display = 'none';
+            document.getElementById('user-info').style.display = 'block';
+            document.getElementById('user-email').textContent = email;
+        }
+        
+        function showLoginForm() {
+            document.getElementById('login-form').style.display = 'block';
+            document.getElementById('user-info').style.display = 'none';
+        }
+
         loadConfig();
         setTimeout(() => {
-            if (config.apiEndpoint) {
+            if (config.apiEndpoint && authToken) {
                 loadAllImages();
                 loadIndexedFaces();
             }
@@ -441,7 +583,10 @@
                 // Call API to generate styled caption
                 const res = await fetch(`${config.apiEndpoint}/style-caption`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
                     body: JSON.stringify({ image_id: imageId, style: style })
                 });
                 

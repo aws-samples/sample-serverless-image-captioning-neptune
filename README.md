@@ -116,6 +116,8 @@ image-name-cap-cdk/
    - `ApiEndpoint`: The API Gateway URL
    - `BucketOut`: The S3 bucket name
    - `NeptuneEndpoint`: The Neptune cluster endpoint
+   - `UserPoolId`: Cognito User Pool ID
+   - `UserPoolClientId`: Cognito User Pool Client ID
 
 ## Usage
 
@@ -127,9 +129,18 @@ aws s3 cp bob1.jpg s3://YOUR_BUCKET/faces/bob/bob1.jpg
 ```
 
 ### 2. Initialize Sample Relationships
+**Note**: All API endpoints require authentication. Use the web UI or get a JWT token first.
+
+**Option A: Use the Web UI** (Recommended)
+- Sign in to the web UI and use the interface to initialize relationships
+
+**Option B: Use curl with JWT token**
 ```bash
+# First, get JWT token by signing in through the web UI or Cognito API
+# Then use the token in API calls:
 curl -X POST https://YOUR_API_ENDPOINT/relationships \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -d '{"action": "initialize"}'
 ```
 
@@ -147,13 +158,35 @@ Upload images to the `images/` prefix for automatic processing:
 aws s3 cp family_photo.jpg s3://YOUR_BUCKET/images/family_photo.jpg
 ```
 
-### 4. Use the Web UI
-1. Open `ui/demo.html` in a browser
-2. Configure the API endpoint and S3 bucket name
-3. Search for images by person name or caption content
-4. View indexed faces and change caption styles
+### 4. Authentication Setup
+The system uses Amazon Cognito for user authentication:
 
-### 5. Relationship-based Search Examples
+1. **Configure the UI**:
+   - Open `ui/demo.html` in a browser
+   - Enter API Gateway endpoint
+   - Enter S3 bucket name
+   - Enter User Pool ID (from CDK output)
+   - Enter Client ID (from CDK output)
+   - Click "Save"
+
+2. **Create User Account**:
+   - Enter email and password (8+ chars, mixed case, digits)
+   - Click "Sign Up"
+   - Check email for verification link
+   - Click verification link
+
+3. **Sign In**:
+   - Enter verified email and password
+   - Click "Sign In"
+   - Session persists across browser refreshes
+
+### 5. Use the Web UI
+1. After signing in, search for images by person name or caption content
+2. View indexed faces and change caption styles
+3. All API calls are authenticated with JWT tokens
+4. Sign out when finished
+
+### 6. Relationship-based Search Examples
 *Note: Examples use fictional demo names*
 - **Simple**: "alice's kids", "bob sibling"
 - **Multi-step**: "alice's children's friends"
@@ -161,6 +194,8 @@ aws s3 cp family_photo.jpg s3://YOUR_BUCKET/images/family_photo.jpg
 - **Role-based**: "mothers with cars", "children outdoor"
 
 ## API Endpoints
+
+**Authentication Required**: All endpoints require a valid JWT token in the `Authorization: Bearer <token>` header.
 
 - `POST /faces`: Index a face with name
 - `POST /images`: Process uploaded image
@@ -176,6 +211,12 @@ aws s3 cp family_photo.jpg s3://YOUR_BUCKET/images/family_photo.jpg
   - `?type=label_hierarchy&name=car` - Category hierarchy for label
   - `?type=label_cooccurrence&name=outdoor` - Labels that co-occur
   - `?type=category_labels&name=vehicle` - All labels in category
+
+**Example API Call**:
+```bash
+curl -X GET "https://YOUR_API_ENDPOINT/search?q=alice" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
 
 ## Caption Styles
 
@@ -233,6 +274,12 @@ The system uses Amazon Rekognition to detect objects, scenes, and activities in 
 
 This solution implements comprehensive security measures:
 
+### Authentication
+- **Cognito User Pools**: Secure user authentication with JWT tokens
+- **Email verification**: Required for account activation
+- **Password policy**: 8+ characters, mixed case, digits required
+- **Session management**: Automatic token refresh and secure logout
+
 ### Data Encryption
 - **At Rest**: AES-256 encryption for S3, DynamoDB, and Neptune
 - **In Transit**: TLS 1.2 for all API communications
@@ -242,10 +289,12 @@ This solution implements comprehensive security measures:
 - Neptune and Lambda functions in private VPC subnets
 - API Gateway as the only public endpoint with CORS and rate limiting
 - Security groups restricting Neptune access to Lambda functions only
+- All API endpoints require valid JWT authentication
 
 ### Access Control
 - Least-privilege IAM policies for all components
 - Resource-specific permissions for Lambda functions
+- User-based access control via Cognito
 - No external data sharing - all data remains in your AWS account
 
 ## Clean Up
